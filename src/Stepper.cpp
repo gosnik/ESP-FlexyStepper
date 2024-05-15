@@ -1,16 +1,16 @@
 
 //      ******************************************************************
 //      *                                                                *
-//      *                    ESP-FlexyStepper                            *
+//      *       Stepper                                                  *
 //      *                                                                *
-//      *            Paul Kerspe                     4.6.2020            *
-//      *       based on the concept of FlexyStepper by Stan Reifel      *
+//      *       Adam Phoenix                                  14.5.2024  *
+//      *       based on the concept of ESP-FlexyStepper by Paul Kerspe  *
 //      *                                                                *
 //      ******************************************************************
 
 // MIT License
 //
-// Copyright (c) 2020 Paul Kerspe
+// Copyright (c) 2024 Adam Phoenix
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -37,14 +37,14 @@
 // supports changing the target position, speed or rate of acceleration while a
 // motion is in progress.
 //
-// for more details and a manual on how to use it, check the README.md on github and the provided examples
-// https://github.com/pkerspe/ESP-FlexyStepper/blob/master/README.md
+// for more details and a manual on how to use it, check the README.md on github and 
+// the provided examples.
 //
-// This library is based on the works of Stan Reifel in his FlexyStepper library:
-// https://github.com/Stan-Reifel/FlexyStepper
+// This library is based on the works of Paul Kerspe in his ESP-FlexyStepper library:
+// https://github.com/pkerspe/ESP-FlexyStepper
 //
 
-#include "ESP_FlexyStepper.h"
+#include "Stepper.h"
 
 //
 // direction signal level for "step and direction"
@@ -59,7 +59,7 @@
 //
 // constructor for the stepper class
 //
-ESP_FlexyStepper::ESP_FlexyStepper()
+Stepper::Stepper()
 {
   this->lastStepTime_InUS = 0L;
   this->stepsPerRevolution = 200L;
@@ -82,66 +82,26 @@ ESP_FlexyStepper::ESP_FlexyStepper()
   this->limitSwitchCheckPeformed = false;
 }
 
-ESP_FlexyStepper::~ESP_FlexyStepper()
+Stepper::~Stepper()
 {
-  if (this->xHandle != NULL)
-  {
-    this->stopService();
-  }
 }
 
-// TODO: use https://github.com/nrwiersma/ESP8266Scheduler/blob/master/examples/simple/simple.ino for ESP8266
-bool ESP_FlexyStepper::startAsService(int coreNumber)
+bool Stepper::startAsService(int coreNumber)
 {
-  if (coreNumber == 0)
-  {
-    disableCore0WDT(); // we have to disable the Watchdog timer to prevent it from rebooting the ESP all the time another option would be to add a vTaskDelay but it would slow down the stepper
-  }
-#if !(CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S2)
-  else if (coreNumber == 1)
-  {
-    disableCore1WDT(); // we have to disable the Watchdog timer to prevent it from rebooting the ESP all the time another option would be to add a vTaskDelay but it would slow down the stepper
-  }
-#endif
-  else
-  {
-    // invalid core number given
-    return false;
-  }
-
-  xTaskCreatePinnedToCore(
-      ESP_FlexyStepper::taskRunner, /* Task function. */
-      "FlexyStepper",               /* String with name of task (by default max 16 characters long) */
-      2000,                         /* Stack size in bytes. */
-      this,                         /* Parameter passed as input of the task */
-      1,                            /* Priority of the task, 1 seems to work just fine for us */
-      &this->xHandle,               /* Task handle. */
-      coreNumber                    /* the cpu core to use, 1 is where usually the Arduino Framework code (setup and loop function) are running, core 0 by default runs the Wifi Stack */
-  );
-
-  configASSERT(this->xHandle);
   return true;
 }
 
-void ESP_FlexyStepper::taskRunner(void *parameter)
+void Stepper::taskRunner(void *parameter)
 {
-  ESP_FlexyStepper *stepperRef = static_cast<ESP_FlexyStepper *>(parameter);
-  for (;;)
-  {
-    stepperRef->processMovement();
-    // vTaskDelay(1); // This would be a working solution to prevent the WDT to fire (if not disabled, yet it will cause noticeably less smooth stepper movements / lower frequencies)
-  }
 }
 
-void ESP_FlexyStepper::stopService(void)
+void Stepper::stopService(void)
 {
-  vTaskDelete(this->xHandle);
-  this->xHandle = NULL;
 }
 
-bool ESP_FlexyStepper::isStartedAsService()
+bool Stepper::isStartedAsService()
 {
-  return (this->xHandle != NULL);
+  return false;
 }
 
 /**
@@ -149,12 +109,8 @@ bool ESP_FlexyStepper::isStartedAsService()
  * This function is used to determine if the stacksize is large enough and has more of a debugging purpose.
  * Return the minimum amount of free bytes on the stack that has been measured so far.
  */
-long ESP_FlexyStepper::getTaskStackHighWaterMark()
+long Stepper::getTaskStackHighWaterMark()
 {
-  if (this->isStartedAsService())
-  {
-    return uxTaskGetStackHighWaterMark(this->xHandle);
-  }
   return 0;
 }
 
@@ -163,7 +119,7 @@ long ESP_FlexyStepper::getTaskStackHighWaterMark()
  * 0 is returned if the stepper is already at the target position.
  * The returned value is signed, depending on the direction to move to reach the target
  */
-long ESP_FlexyStepper::getDistanceToTargetSigned()
+long Stepper::getDistanceToTargetSigned()
 {
   return (this->targetPosition_InSteps - this->currentPosition_InSteps);
 }
@@ -174,7 +130,7 @@ long ESP_FlexyStepper::getDistanceToTargetSigned()
  * or if it should hold the emergency stop status (kind of a latching functionality) until the releaseEmergencyStop() function is called explicitly.
  * Default for holdUntilReleased is false (if parameter is omitted)
  */
-void ESP_FlexyStepper::emergencyStop(bool holdUntilReleased)
+void Stepper::emergencyStop(bool holdUntilReleased)
 {
   this->holdEmergencyStopUntilExplicitRelease = holdUntilReleased;
   this->emergencyStopActive = (!this->motionComplete() || this->holdEmergencyStopUntilExplicitRelease);
@@ -187,7 +143,7 @@ void ESP_FlexyStepper::emergencyStop(bool holdUntilReleased)
 /**
  * releases an emergency stop that has previously been engaged using a call to emergencyStop(true)
  */
-void ESP_FlexyStepper::releaseEmergencyStop()
+void Stepper::releaseEmergencyStop()
 {
   this->emergencyStopActive = false;
   if (this->_emergencyStopReleasedCallback)
@@ -200,7 +156,7 @@ void ESP_FlexyStepper::releaseEmergencyStop()
  *  configure the direction in which to move to reach the home position
  *  Accepts 1 or -1 as allowed values. Other values will be ignored
  */
-void ESP_FlexyStepper::setDirectionToHome(signed char directionTowardHome)
+void Stepper::setDirectionToHome(signed char directionTowardHome)
 {
   if (directionTowardHome == -1 || directionTowardHome == 1)
   {
@@ -214,7 +170,7 @@ void ESP_FlexyStepper::setDirectionToHome(signed char directionTowardHome)
  * whether the limit switch near the begin (direction of home position) or at the end of the movement has ben triggered.
  * It is strongly recommended to perform debouncing before calling this function to prevent issues when button is released and re-triggering the limit switch function
  */
-void ESP_FlexyStepper::setLimitSwitchActive(signed char limitSwitchType)
+void Stepper::setLimitSwitchActive(signed char limitSwitchType)
 {
   if (limitSwitchType == LIMIT_SWITCH_BEGIN || limitSwitchType == LIMIT_SWITCH_END || limitSwitchType == LIMIT_SWITCH_COMBINED_BEGIN_AND_END)
   {
@@ -230,7 +186,7 @@ void ESP_FlexyStepper::setLimitSwitchActive(signed char limitSwitchType)
 /**
  * clear the limit switch flag to allow movement in both directions again
  */
-void ESP_FlexyStepper::clearLimitSwitchActive()
+void Stepper::clearLimitSwitchActive()
 {
   this->activeLimitSwitch = 0;
 }
@@ -241,7 +197,7 @@ void ESP_FlexyStepper::clearLimitSwitchActive()
  * returns -1 for "backward" motion
  * returns 0 if the stepper has reached its destination position and is not moving anymore
  */
-int ESP_FlexyStepper::getDirectionOfMotion(void)
+int Stepper::getDirectionOfMotion(void)
 {
   return this->directionOfMotion;
 }
@@ -250,7 +206,7 @@ int ESP_FlexyStepper::getDirectionOfMotion(void)
  * returns true if the stepper is currently in motion and moving in the direction of the home position.
  * Depends on the settings of setDirectionToHome() which defines where "home" is...a rather philosophical question :-)
  */
-bool ESP_FlexyStepper::isMovingTowardsHome()
+bool Stepper::isMovingTowardsHome()
 {
   return (this->directionOfMotion == this->directionTowardsHome);
 }
@@ -260,7 +216,7 @@ bool ESP_FlexyStepper::isMovingTowardsHome()
  * stepPinNumber = IO pin number for the Step signal
  * directionPinNumber = IO pin number for the direction signal
  */
-void ESP_FlexyStepper::connectToPins(byte stepPinNumber, byte directionPinNumber, bool useOpenDrain)
+void Stepper::connectToPins(byte stepPinNumber, byte directionPinNumber, bool useOpenDrain)
 {
   this->stepPin = stepPinNumber;
   this->directionPin = directionPinNumber;
@@ -297,16 +253,16 @@ void ESP_FlexyStepper::connectToPins(byte stepPinNumber, byte directionPinNumber
  * active high = 1, active low = 2
  * Will be set to active high by default or if an invalid value is given
  */
-void ESP_FlexyStepper::setBrakePin(signed char brakePin, byte activeState)
+void Stepper::setBrakePin(signed char brakePin, byte activeState)
 {
   this->brakePin = brakePin;
-  if (activeState == ESP_FlexyStepper::ACTIVE_HIGH || activeState == ESP_FlexyStepper::ACTIVE_LOW)
+  if (activeState == Stepper::ACTIVE_HIGH || activeState == Stepper::ACTIVE_LOW)
   {
     this->brakePinActiveState = activeState;
   }
   else
   {
-    this->brakePinActiveState = ESP_FlexyStepper::ACTIVE_HIGH;
+    this->brakePinActiveState = Stepper::ACTIVE_HIGH;
   }
 
   if (this->brakePin >= 0)
@@ -329,16 +285,16 @@ void ESP_FlexyStepper::setBrakePin(signed char brakePin, byte activeState)
  * active high = 1, active low = 2
  * Will be set to active high by default or if an invalid value is given
  */
-void ESP_FlexyStepper::setEnablePin(signed char enablePin, byte activeState)
+void Stepper::setEnablePin(signed char enablePin, byte activeState)
 {
   this->enablePin = enablePin;
-  if (activeState == ESP_FlexyStepper::ACTIVE_HIGH || activeState == ESP_FlexyStepper::ACTIVE_LOW)
+  if (activeState == Stepper::ACTIVE_HIGH || activeState == Stepper::ACTIVE_LOW)
   {
     this->enablePinActiveState = activeState;
   }
   else
   {
-    this->enablePinActiveState = ESP_FlexyStepper::ACTIVE_LOW;
+    this->enablePinActiveState = Stepper::ACTIVE_LOW;
   }
 
   if (this->enablePin >= 0)
@@ -358,7 +314,7 @@ void ESP_FlexyStepper::setEnablePin(signed char enablePin, byte activeState)
  * Default is 0, resulting in immediate triggering of the motor brake once the motor stops moving.
  * This value does NOT affect the triggering of the brake in case of an emergency stop. In this case the brake will always get triggered without delay
  */
-void ESP_FlexyStepper::setBrakeEngageDelayMs(unsigned long delay)
+void Stepper::setBrakeEngageDelayMs(unsigned long delay)
 {
   this->_brakeEngageDelayMs = delay;
 }
@@ -368,7 +324,7 @@ void ESP_FlexyStepper::setBrakeEngageDelayMs(unsigned long delay)
  * By default the value is -1 indicating, that the brake shall never be automatically released, as long as the stepper motor is not moving to a new position.
  * Value must be larger than 1 (Even though 1ms delay does probably not make any sense since physical brakes have a delay that is most likely higher than that just to engage)
  */
-void ESP_FlexyStepper::setBrakeReleaseDelayMs(signed long delay)
+void Stepper::setBrakeReleaseDelayMs(signed long delay)
 {
   if (delay < 0)
   {
@@ -383,11 +339,11 @@ void ESP_FlexyStepper::setBrakeReleaseDelayMs(signed long delay)
 /**
  * activate (engage) the motor brake (if any is configured, otherwise will do nothing)
  */
-void ESP_FlexyStepper::activateBrake()
+void Stepper::activateBrake()
 {
   if (this->_isBrakeConfigured)
   {
-    digitalWrite((uint8_t)this->brakePin, (this->brakePinActiveState == ESP_FlexyStepper::ACTIVE_HIGH) ? 1 : 0);
+    digitalWrite((uint8_t)this->brakePin, (this->brakePinActiveState == Stepper::ACTIVE_HIGH) ? 1 : 0);
     this->_isBrakeActive = true;
     this->_timeToEngangeBrake = LONG_MAX;
   }
@@ -396,11 +352,11 @@ void ESP_FlexyStepper::activateBrake()
 /**
  * deactivate (release) the motor brake (if any is configured, otherwise will do nothing)
  */
-void ESP_FlexyStepper::deactivateBrake()
+void Stepper::deactivateBrake()
 {
   if (this->_isBrakeConfigured)
   {
-    digitalWrite((uint8_t)this->brakePin, (this->brakePinActiveState == ESP_FlexyStepper::ACTIVE_HIGH) ? 0 : 1);
+    digitalWrite((uint8_t)this->brakePin, (this->brakePinActiveState == Stepper::ACTIVE_HIGH) ? 0 : 1);
     this->_isBrakeActive = false;
     this->_timeToReleaseBrake = LONG_MAX;
     this->_hasMovementOccuredSinceLastBrakeRelease = false;
@@ -409,7 +365,7 @@ void ESP_FlexyStepper::deactivateBrake()
   }
 }
 
-bool ESP_FlexyStepper::isBrakeActive()
+bool Stepper::isBrakeActive()
 {
   return this->_isBrakeActive;
 }
@@ -417,11 +373,11 @@ bool ESP_FlexyStepper::isBrakeActive()
 /**
  * activate (engage) the driver (if any is configured, otherwise will do nothing)
  */
-void ESP_FlexyStepper::enableDriver(void)
+void Stepper::enableDriver(void)
 {
   if (this->_isEnableConfigured)
   {
-    digitalWrite((uint8_t)this->enablePin, (this->enablePinActiveState == ESP_FlexyStepper::ACTIVE_HIGH) ? 1 : 0);
+    digitalWrite((uint8_t)this->enablePin, (this->enablePinActiveState == Stepper::ACTIVE_HIGH) ? 1 : 0);
     this->_isDriverEnabled = true;
   }
 }
@@ -429,16 +385,16 @@ void ESP_FlexyStepper::enableDriver(void)
 /**
  * deactivate (release) the driver (if any is configured, otherwise will do nothing)
  */
-void ESP_FlexyStepper::disableDriver(void)
+void Stepper::disableDriver(void)
 {
   if (this->_isEnableConfigured)
   {
-    digitalWrite((uint8_t)this->enablePin, (this->enablePinActiveState == ESP_FlexyStepper::ACTIVE_HIGH) ? 0 : 1);
+    digitalWrite((uint8_t)this->enablePin, (this->enablePinActiveState == Stepper::ACTIVE_HIGH) ? 0 : 1);
     this->_isDriverEnabled = false;
   }
 }
 
-bool ESP_FlexyStepper::isDriverEnabled(void)
+bool Stepper::isDriverEnabled(void)
 {
   return this->_isDriverEnabled;
 }
@@ -450,7 +406,7 @@ bool ESP_FlexyStepper::isDriverEnabled(void)
 //
 // set the number of steps the motor has per millimeters
 //
-void ESP_FlexyStepper::setStepsPerMillimeter(float motorStepsPerMillimeter)
+void Stepper::setStepsPerMillimeter(float motorStepsPerMillimeter)
 {
   stepsPerMillimeter = motorStepsPerMillimeter;
 }
@@ -460,7 +416,7 @@ void ESP_FlexyStepper::setStepsPerMillimeter(float motorStepsPerMillimeter)
 // while the motor moves
 //  Exit:  a signed motor position in millimeters returned
 //
-float ESP_FlexyStepper::getCurrentPositionInMillimeters()
+float Stepper::getCurrentPositionInMillimeters()
 {
   return ((float)getCurrentPositionInSteps() / stepsPerMillimeter);
 }
@@ -471,7 +427,7 @@ float ESP_FlexyStepper::getCurrentPositionInMillimeters()
 // NOTE: if you called one of the move functions before (and by that setting a target position internally) you might experience that the motor starts to move after calling setCurrentPositionInMillimeters() in the case that the value of currentPositionInMillimeters is different from the target position of the stepper.
 // If this is not intended, you should call setTargetPositionInMillimeters() with the same value as the setCurrentPositionInMillimeters() function directly before or after calling setCurrentPositionInMillimeters
 //
-void ESP_FlexyStepper::setCurrentPositionInMillimeters(
+void Stepper::setCurrentPositionInMillimeters(
     float currentPositionInMillimeters)
 {
   setCurrentPositionInSteps((long)round(currentPositionInMillimeters *
@@ -484,7 +440,7 @@ void ESP_FlexyStepper::setCurrentPositionInMillimeters(
 //  Enter:  speedInMillimetersPerSecond = speed to accelerate up to, units in
 //            millimeters/second
 //
-void ESP_FlexyStepper::setSpeedInMillimetersPerSecond(float speedInMillimetersPerSecond)
+void Stepper::setSpeedInMillimetersPerSecond(float speedInMillimetersPerSecond)
 {
   setSpeedInStepsPerSecond(speedInMillimetersPerSecond * stepsPerMillimeter);
 }
@@ -494,7 +450,7 @@ void ESP_FlexyStepper::setSpeedInMillimetersPerSecond(float speedInMillimetersPe
 //  Enter:  accelerationInMillimetersPerSecondPerSecond = rate of acceleration,
 //          units in millimeters/second/second
 //
-void ESP_FlexyStepper::setAccelerationInMillimetersPerSecondPerSecond(
+void Stepper::setAccelerationInMillimetersPerSecondPerSecond(
     float accelerationInMillimetersPerSecondPerSecond)
 {
   setAccelerationInStepsPerSecondPerSecond(
@@ -506,7 +462,7 @@ void ESP_FlexyStepper::setAccelerationInMillimetersPerSecondPerSecond(
 //  Enter:  decelerationInMillimetersPerSecondPerSecond = rate of deceleration,
 //          units in millimeters/second/second
 //
-void ESP_FlexyStepper::setDecelerationInMillimetersPerSecondPerSecond(
+void Stepper::setDecelerationInMillimetersPerSecondPerSecond(
     float decelerationInMillimetersPerSecondPerSecond)
 {
   setDecelerationInStepsPerSecondPerSecond(
@@ -526,7 +482,7 @@ void ESP_FlexyStepper::setDecelerationInMillimetersPerSecondPerSecond(
 //            configured to go low when at home
 //  Exit:   true returned if successful, else false
 //
-bool ESP_FlexyStepper::moveToHomeInMillimeters(signed char directionTowardHome,
+bool Stepper::moveToHomeInMillimeters(signed char directionTowardHome,
                                                float speedInMillimetersPerSecond, long maxDistanceToMoveInMillimeters,
                                                int homeLimitSwitchPin)
 {
@@ -542,7 +498,7 @@ bool ESP_FlexyStepper::moveToHomeInMillimeters(signed char directionTowardHome,
 //  Enter:  distanceToMoveInMillimeters = signed distance to move relative to the
 //          current position in millimeters
 //
-void ESP_FlexyStepper::moveRelativeInMillimeters(float distanceToMoveInMillimeters)
+void Stepper::moveRelativeInMillimeters(float distanceToMoveInMillimeters)
 {
   setTargetPositionRelativeInMillimeters(distanceToMoveInMillimeters);
 
@@ -556,7 +512,7 @@ void ESP_FlexyStepper::moveRelativeInMillimeters(float distanceToMoveInMillimete
 //  Enter:  distanceToMoveInMillimeters = signed distance to move relative to the
 //          current position in millimeters
 //
-void ESP_FlexyStepper::setTargetPositionRelativeInMillimeters(
+void Stepper::setTargetPositionRelativeInMillimeters(
     float distanceToMoveInMillimeters)
 {
   setTargetPositionRelativeInSteps((long)round(distanceToMoveInMillimeters *
@@ -569,7 +525,7 @@ void ESP_FlexyStepper::setTargetPositionRelativeInMillimeters(
 //  Enter:  absolutePositionToMoveToInMillimeters = signed absolute position to
 //          move to in units of millimeters
 //
-void ESP_FlexyStepper::moveToPositionInMillimeters(
+void Stepper::moveToPositionInMillimeters(
     float absolutePositionToMoveToInMillimeters)
 {
   setTargetPositionInMillimeters(absolutePositionToMoveToInMillimeters);
@@ -584,14 +540,14 @@ void ESP_FlexyStepper::moveToPositionInMillimeters(
 //  Enter:  absolutePositionToMoveToInMillimeters = signed absolute position to
 //          move to in units of millimeters
 //
-void ESP_FlexyStepper::setTargetPositionInMillimeters(
+void Stepper::setTargetPositionInMillimeters(
     float absolutePositionToMoveToInMillimeters)
 {
   setTargetPositionInSteps((long)round(absolutePositionToMoveToInMillimeters *
                                        stepsPerMillimeter));
 }
 
-float ESP_FlexyStepper::getTargetPositionInMillimeters()
+float Stepper::getTargetPositionInMillimeters()
 {
   return getTargetPositionInSteps() / stepsPerMillimeter;
 }
@@ -606,7 +562,7 @@ float ESP_FlexyStepper::getTargetPositionInMillimeters()
 // great for the amount of torque that it can generate.
 //  Exit:  velocity speed in steps per second returned, signed
 //
-float ESP_FlexyStepper::getCurrentVelocityInMillimetersPerSecond()
+float Stepper::getCurrentVelocityInMillimetersPerSecond()
 {
   return (getCurrentVelocityInStepsPerSecond() / stepsPerMillimeter);
 }
@@ -615,32 +571,32 @@ float ESP_FlexyStepper::getCurrentVelocityInMillimetersPerSecond()
 access the acceleration/deceleration parameters set by user
 */
 
-float ESP_FlexyStepper::getConfiguredAccelerationInStepsPerSecondPerSecond()
+float Stepper::getConfiguredAccelerationInStepsPerSecondPerSecond()
 {
   return acceleration_InStepsPerSecondPerSecond;
 }
 
-float ESP_FlexyStepper::getConfiguredAccelerationInRevolutionsPerSecondPerSecond()
+float Stepper::getConfiguredAccelerationInRevolutionsPerSecondPerSecond()
 {
   return acceleration_InStepsPerSecondPerSecond / stepsPerRevolution;
 }
 
-float ESP_FlexyStepper::getConfiguredAccelerationInMillimetersPerSecondPerSecond()
+float Stepper::getConfiguredAccelerationInMillimetersPerSecondPerSecond()
 {
   return acceleration_InStepsPerSecondPerSecond / stepsPerMillimeter;
 }
 
-float ESP_FlexyStepper::getConfiguredDecelerationInStepsPerSecondPerSecond()
+float Stepper::getConfiguredDecelerationInStepsPerSecondPerSecond()
 {
   return deceleration_InStepsPerSecondPerSecond;
 }
 
-float ESP_FlexyStepper::getConfiguredDecelerationInRevolutionsPerSecondPerSecond()
+float Stepper::getConfiguredDecelerationInRevolutionsPerSecondPerSecond()
 {
   return deceleration_InStepsPerSecondPerSecond / stepsPerRevolution;
 }
 
-float ESP_FlexyStepper::getConfiguredDecelerationInMillimetersPerSecondPerSecond()
+float Stepper::getConfiguredDecelerationInMillimetersPerSecondPerSecond()
 {
   return deceleration_InStepsPerSecondPerSecond / stepsPerMillimeter;
 }
@@ -652,7 +608,7 @@ float ESP_FlexyStepper::getConfiguredDecelerationInMillimetersPerSecondPerSecond
 //
 // set the number of steps the motor has per revolution
 //
-void ESP_FlexyStepper::setStepsPerRevolution(float motorStepPerRevolution)
+void Stepper::setStepsPerRevolution(float motorStepPerRevolution)
 {
   stepsPerRevolution = motorStepPerRevolution;
 }
@@ -662,7 +618,7 @@ void ESP_FlexyStepper::setStepsPerRevolution(float motorStepPerRevolution)
 // while the motor moves
 //  Exit:  a signed motor position in revolutions returned
 //
-float ESP_FlexyStepper::getCurrentPositionInRevolutions()
+float Stepper::getCurrentPositionInRevolutions()
 {
   return ((float)getCurrentPositionInSteps() / stepsPerRevolution);
 }
@@ -673,7 +629,7 @@ float ESP_FlexyStepper::getCurrentPositionInRevolutions()
 // NOTE: if you called one of the move functions before (and by that setting a target position internally) you might experience that the motor starts to move after calling setCurrentPositionInRevolutions() in the case that the value of currentPositionInRevolutions is different from the target position of the stepper.
 // If this is not intended, you should call setTargetPositionInRevolutions() with the same value as the setCurrentPositionInRevolutions() function directly before or after calling setCurrentPositionInRevolutions
 
-void ESP_FlexyStepper::setCurrentPositionInRevolutions(
+void Stepper::setCurrentPositionInRevolutions(
     float currentPositionInRevolutions)
 {
   setCurrentPositionInSteps((long)round(currentPositionInRevolutions *
@@ -686,7 +642,7 @@ void ESP_FlexyStepper::setCurrentPositionInRevolutions(
 //  Enter:  speedInRevolutionsPerSecond = speed to accelerate up to, units in
 //            revolutions/second
 //
-void ESP_FlexyStepper::setSpeedInRevolutionsPerSecond(float speedInRevolutionsPerSecond)
+void Stepper::setSpeedInRevolutionsPerSecond(float speedInRevolutionsPerSecond)
 {
   setSpeedInStepsPerSecond(speedInRevolutionsPerSecond * stepsPerRevolution);
 }
@@ -696,7 +652,7 @@ void ESP_FlexyStepper::setSpeedInRevolutionsPerSecond(float speedInRevolutionsPe
 //  Enter:  accelerationInRevolutionsPerSecondPerSecond = rate of acceleration,
 //          units in revolutions/second/second
 //
-void ESP_FlexyStepper::setAccelerationInRevolutionsPerSecondPerSecond(
+void Stepper::setAccelerationInRevolutionsPerSecondPerSecond(
     float accelerationInRevolutionsPerSecondPerSecond)
 {
   setAccelerationInStepsPerSecondPerSecond(
@@ -708,7 +664,7 @@ void ESP_FlexyStepper::setAccelerationInRevolutionsPerSecondPerSecond(
 //  Enter:  decelerationInRevolutionsPerSecondPerSecond = rate of deceleration,
 //          units in revolutions/second/second
 //
-void ESP_FlexyStepper::setDecelerationInRevolutionsPerSecondPerSecond(
+void Stepper::setDecelerationInRevolutionsPerSecondPerSecond(
     float decelerationInRevolutionsPerSecondPerSecond)
 {
   setDecelerationInStepsPerSecondPerSecond(
@@ -728,7 +684,7 @@ void ESP_FlexyStepper::setDecelerationInRevolutionsPerSecondPerSecond(
 //            configured to go low when at home
 //  Exit:   true returned if successful, else false
 //
-bool ESP_FlexyStepper::moveToHomeInRevolutions(signed char directionTowardHome,
+bool Stepper::moveToHomeInRevolutions(signed char directionTowardHome,
                                                float speedInRevolutionsPerSecond, long maxDistanceToMoveInRevolutions,
                                                int homeLimitSwitchPin)
 {
@@ -744,7 +700,7 @@ bool ESP_FlexyStepper::moveToHomeInRevolutions(signed char directionTowardHome,
 //  Enter:  distanceToMoveInRevolutions = signed distance to move relative to the
 //          current position in revolutions
 //
-void ESP_FlexyStepper::moveRelativeInRevolutions(float distanceToMoveInRevolutions)
+void Stepper::moveRelativeInRevolutions(float distanceToMoveInRevolutions)
 {
   setTargetPositionRelativeInRevolutions(distanceToMoveInRevolutions);
 
@@ -758,7 +714,7 @@ void ESP_FlexyStepper::moveRelativeInRevolutions(float distanceToMoveInRevolutio
 //  Enter:  distanceToMoveInRevolutions = signed distance to move relative to the
 //            currentposition in revolutions
 //
-void ESP_FlexyStepper::setTargetPositionRelativeInRevolutions(
+void Stepper::setTargetPositionRelativeInRevolutions(
     float distanceToMoveInRevolutions)
 {
   setTargetPositionRelativeInSteps((long)round(distanceToMoveInRevolutions *
@@ -771,7 +727,7 @@ void ESP_FlexyStepper::setTargetPositionRelativeInRevolutions(
 //  Enter:  absolutePositionToMoveToInRevolutions = signed absolute position to
 //            move to in units of revolutions
 //
-void ESP_FlexyStepper::moveToPositionInRevolutions(
+void Stepper::moveToPositionInRevolutions(
     float absolutePositionToMoveToInRevolutions)
 {
   setTargetPositionInRevolutions(absolutePositionToMoveToInRevolutions);
@@ -786,14 +742,14 @@ void ESP_FlexyStepper::moveToPositionInRevolutions(
 //  Enter:  absolutePositionToMoveToInRevolutions = signed absolute position to
 //          move to in units of revolutions
 //
-void ESP_FlexyStepper::setTargetPositionInRevolutions(
+void Stepper::setTargetPositionInRevolutions(
     float absolutePositionToMoveToInRevolutions)
 {
   setTargetPositionInSteps((long)round(absolutePositionToMoveToInRevolutions *
                                        stepsPerRevolution));
 }
 
-float ESP_FlexyStepper::getTargetPositionInRevolutions()
+float Stepper::getTargetPositionInRevolutions()
 {
   return getTargetPositionInSteps() / stepsPerRevolution;
 }
@@ -808,7 +764,7 @@ float ESP_FlexyStepper::getTargetPositionInRevolutions()
 // great for the amount of torque that it can generate.
 //  Exit:  velocity speed in steps per second returned, signed
 //
-float ESP_FlexyStepper::getCurrentVelocityInRevolutionsPerSecond()
+float Stepper::getCurrentVelocityInRevolutionsPerSecond()
 {
   return (getCurrentVelocityInStepsPerSecond() / stepsPerRevolution);
 }
@@ -826,7 +782,7 @@ float ESP_FlexyStepper::getCurrentVelocityInRevolutionsPerSecond()
 // If you called one of the move functions before (and by that setting a target position internally) you might experience that the motor starts to move after calling setCurrentPositionInSteps() in the case that the value of currentPositionInSteps is different from the target position of the stepper.
 // If this is not intended, you should call setTargetPositionInSteps() with the same value as the setCurrentPositionInSteps() function directly before or after calling setCurrentPositionInSteps
 //
-void ESP_FlexyStepper::setCurrentPositionInSteps(long currentPositionInSteps)
+void Stepper::setCurrentPositionInSteps(long currentPositionInSteps)
 {
   currentPosition_InSteps = currentPositionInSteps;
 }
@@ -836,7 +792,7 @@ void ESP_FlexyStepper::setCurrentPositionInSteps(long currentPositionInSteps)
 // while the motor moves
 //  Exit:  a signed motor position in steps returned
 //
-long ESP_FlexyStepper::getCurrentPositionInSteps()
+long Stepper::getCurrentPositionInSteps()
 {
   return (currentPosition_InSteps);
 }
@@ -846,7 +802,7 @@ long ESP_FlexyStepper::getCurrentPositionInSteps()
 // while accelerating
 //  Enter:  speedInStepsPerSecond = speed to accelerate up to, units in steps/second
 //
-void ESP_FlexyStepper::setSpeedInStepsPerSecond(float speedInStepsPerSecond)
+void Stepper::setSpeedInStepsPerSecond(float speedInStepsPerSecond)
 {
   desiredSpeed_InStepsPerSecond = speedInStepsPerSecond;
   desiredPeriod_InUSPerStep = 1000000.0 / desiredSpeed_InStepsPerSecond;
@@ -857,7 +813,7 @@ void ESP_FlexyStepper::setSpeedInStepsPerSecond(float speedInStepsPerSecond)
 //  Enter:  accelerationInStepsPerSecondPerSecond = rate of acceleration, units in
 //          steps/second/second
 //
-void ESP_FlexyStepper::setAccelerationInStepsPerSecondPerSecond(
+void Stepper::setAccelerationInStepsPerSecondPerSecond(
     float accelerationInStepsPerSecondPerSecond)
 {
   acceleration_InStepsPerSecondPerSecond = accelerationInStepsPerSecondPerSecond;
@@ -873,7 +829,7 @@ void ESP_FlexyStepper::setAccelerationInStepsPerSecondPerSecond(
 //  Enter:  decelerationInStepsPerSecondPerSecond = rate of deceleration, units in
 //          steps/second/second
 //
-void ESP_FlexyStepper::setDecelerationInStepsPerSecondPerSecond(
+void Stepper::setDecelerationInStepsPerSecondPerSecond(
     float decelerationInStepsPerSecondPerSecond)
 {
   deceleration_InStepsPerSecondPerSecond = decelerationInStepsPerSecondPerSecond;
@@ -883,7 +839,7 @@ void ESP_FlexyStepper::setDecelerationInStepsPerSecondPerSecond(
 /**
  * set the current position as the home position (Step count = 0)
  */
-void ESP_FlexyStepper::setCurrentPositionAsHomeAndStop()
+void Stepper::setCurrentPositionAsHomeAndStop()
 {
   this->isOnWayToHome = false;
   this->currentStepPeriod_InUS = 0.0;
@@ -897,9 +853,9 @@ void ESP_FlexyStepper::setCurrentPositionAsHomeAndStop()
 /**
  * start jogging in the direction of home (use setDirectionToHome() to set the proper direction) until the limit switch is hit, then set the position as home
  * Warning: This function requires a limit switch to be configured otherwise the motor will never stop jogging.
- * This is a non blocking function, you need make sure ESP_FlexyStepper is started as service (use startAsService() function) or need to call the processMovement function manually in your main loop.
+ * This is a non blocking function, you need make sure Stepper is started as service (use startAsService() function) or need to call the processMovement function manually in your main loop.
  */
-void ESP_FlexyStepper::goToLimitAndSetAsHome(callbackFunction callbackFunctionForHome, long maxDistanceToMoveInSteps)
+void Stepper::goToLimitAndSetAsHome(callbackFunction callbackFunctionForHome, long maxDistanceToMoveInSteps)
 {
   if (callbackFunctionForHome)
   {
@@ -913,7 +869,7 @@ void ESP_FlexyStepper::goToLimitAndSetAsHome(callbackFunction callbackFunctionFo
   this->isOnWayToHome = true; // set as last action, since other functions might overwrite it
 }
 
-void ESP_FlexyStepper::goToLimit(signed char direction, callbackFunction callbackFunctionForLimit)
+void Stepper::goToLimit(signed char direction, callbackFunction callbackFunctionForLimit)
 {
   if (callbackFunctionForLimit)
   {
@@ -930,7 +886,7 @@ void ESP_FlexyStepper::goToLimit(signed char direction, callbackFunction callbac
 /**
  * register a callback function to be called whenever a movement to home has been completed (does not trigger when movement passes by the home position)
  */
-void ESP_FlexyStepper::registerHomeReachedCallback(callbackFunction newFunction)
+void Stepper::registerHomeReachedCallback(callbackFunction newFunction)
 {
   this->_homeReachedCallback = newFunction;
 }
@@ -938,7 +894,7 @@ void ESP_FlexyStepper::registerHomeReachedCallback(callbackFunction newFunction)
 /**
  * register a callback function to be called whenever a
  */
-void ESP_FlexyStepper::registerLimitReachedCallback(callbackFunction limitSwitchTriggerdCallbackFunction)
+void Stepper::registerLimitReachedCallback(callbackFunction limitSwitchTriggerdCallbackFunction)
 {
   this->_limitTriggeredCallback = limitSwitchTriggerdCallbackFunction;
 }
@@ -946,7 +902,7 @@ void ESP_FlexyStepper::registerLimitReachedCallback(callbackFunction limitSwitch
 /**
  * register a callback function to be called whenever a target position has been reached
  */
-void ESP_FlexyStepper::registerTargetPositionReachedCallback(positionCallbackFunction targetPositionReachedCallbackFunction)
+void Stepper::registerTargetPositionReachedCallback(positionCallbackFunction targetPositionReachedCallbackFunction)
 {
   this->_targetPositionReachedCallback = targetPositionReachedCallbackFunction;
 }
@@ -954,7 +910,7 @@ void ESP_FlexyStepper::registerTargetPositionReachedCallback(positionCallbackFun
 /**
  * register a callback function to be called whenever a emergency stop is triggered
  */
-void ESP_FlexyStepper::registerEmergencyStopTriggeredCallback(callbackFunction emergencyStopTriggerdCallbackFunction)
+void Stepper::registerEmergencyStopTriggeredCallback(callbackFunction emergencyStopTriggerdCallbackFunction)
 {
   this->_emergencyStopTriggeredCallback = emergencyStopTriggerdCallbackFunction;
 }
@@ -962,7 +918,7 @@ void ESP_FlexyStepper::registerEmergencyStopTriggeredCallback(callbackFunction e
 /**
  * register a callback function to be called whenever the emergency stop switch is released
  */
-void ESP_FlexyStepper::registerEmergencyStopReleasedCallback(callbackFunction emergencyStopReleasedCallbackFunction)
+void Stepper::registerEmergencyStopReleasedCallback(callbackFunction emergencyStopReleasedCallbackFunction)
 {
   this->_emergencyStopReleasedCallback = emergencyStopReleasedCallbackFunction;
 }
@@ -974,7 +930,7 @@ void ESP_FlexyStepper::registerEmergencyStopReleasedCallback(callbackFunction em
  * Will also stop when the external limit switch has been triggered using setLimitSwitchActive() or when the emergencyStop function is triggered
  * Warning: This function requires either a limit switch to be configured or manual trigger of the stopJogging/setTargetPositionToStop or emergencyStop function, otherwise the motor will never stop jogging (which could of course also be an intended behavior)
  */
-void ESP_FlexyStepper::startJogging(signed char direction)
+void Stepper::startJogging(signed char direction)
 {
   this->setTargetPositionInSteps(direction * 2000000000);
 }
@@ -982,7 +938,7 @@ void ESP_FlexyStepper::startJogging(signed char direction)
 /**
  * Stop jogging, basically an alias function for setTargetPositionToStop()
  */
-void ESP_FlexyStepper::stopJogging()
+void Stepper::stopJogging()
 {
   this->setTargetPositionToStop();
 }
@@ -1000,7 +956,7 @@ void ESP_FlexyStepper::stopJogging()
 //            configured to go low when at home
 //  Exit:   true returned if successful, else false
 //
-bool ESP_FlexyStepper::moveToHomeInSteps(signed char directionTowardHome,
+bool Stepper::moveToHomeInSteps(signed char directionTowardHome,
                                          float speedInStepsPerSecond, long maxDistanceToMoveInSteps,
                                          int homeLimitSwitchPin)
 {
@@ -1118,7 +1074,7 @@ bool ESP_FlexyStepper::moveToHomeInSteps(signed char directionTowardHome,
 //  Enter:  distanceToMoveInSteps = signed distance to move relative to the current
 //          position in steps
 //
-void ESP_FlexyStepper::moveRelativeInSteps(long distanceToMoveInSteps)
+void Stepper::moveRelativeInSteps(long distanceToMoveInSteps)
 {
   setTargetPositionRelativeInSteps(distanceToMoveInSteps);
 
@@ -1132,7 +1088,7 @@ void ESP_FlexyStepper::moveRelativeInSteps(long distanceToMoveInSteps)
 //  Enter:  distanceToMoveInSteps = signed distance to move relative to the current
 //            position in steps
 //
-void ESP_FlexyStepper::setTargetPositionRelativeInSteps(long distanceToMoveInSteps)
+void Stepper::setTargetPositionRelativeInSteps(long distanceToMoveInSteps)
 {
   setTargetPositionInSteps(currentPosition_InSteps + distanceToMoveInSteps);
 }
@@ -1143,7 +1099,7 @@ void ESP_FlexyStepper::setTargetPositionRelativeInSteps(long distanceToMoveInSte
 //  Enter:  absolutePositionToMoveToInSteps = signed absolute position to move to
 //            in units of steps
 //
-void ESP_FlexyStepper::moveToPositionInSteps(long absolutePositionToMoveToInSteps)
+void Stepper::moveToPositionInSteps(long absolutePositionToMoveToInSteps)
 {
   setTargetPositionInSteps(absolutePositionToMoveToInSteps);
 
@@ -1156,7 +1112,7 @@ void ESP_FlexyStepper::moveToPositionInSteps(long absolutePositionToMoveToInStep
 //  Enter:  absolutePositionToMoveToInSteps = signed absolute position to move to
 //            in units of steps
 //
-void ESP_FlexyStepper::setTargetPositionInSteps(long absolutePositionToMoveToInSteps)
+void Stepper::setTargetPositionInSteps(long absolutePositionToMoveToInSteps)
 {
   // abort potentially running homing movement
   this->isOnWayToHome = false;
@@ -1165,7 +1121,7 @@ void ESP_FlexyStepper::setTargetPositionInSteps(long absolutePositionToMoveToInS
   this->firstProcessingAfterTargetReached = true;
 }
 
-long ESP_FlexyStepper::getTargetPositionInSteps()
+long Stepper::getTargetPositionInSteps()
 {
   return targetPosition_InSteps;
 }
@@ -1176,7 +1132,7 @@ long ESP_FlexyStepper::getTargetPositionInSteps()
 // Note: This function can be used to stop a motion initiated in units of steps
 // or revolutions
 //
-void ESP_FlexyStepper::setTargetPositionToStop()
+void Stepper::setTargetPositionToStop()
 {
   // abort potentially running homing movement
   this->isOnWayToHome = false;
@@ -1206,7 +1162,7 @@ void ESP_FlexyStepper::setTargetPositionToStop()
 // if it is time, move one step
 //  Exit:  true returned if movement complete, false returned not a final target position yet
 //
-bool ESP_FlexyStepper::processMovement(void)
+bool Stepper::processMovement(void)
 {
   if (emergencyStopActive)
   {
@@ -1432,7 +1388,7 @@ bool ESP_FlexyStepper::processMovement(void)
 /**
  * internal helper to determine if brake shall be activated (if configured at all) or if a delay needs to be set
  */
-void ESP_FlexyStepper::triggerBrakeIfNeededOrSetTimeout()
+void Stepper::triggerBrakeIfNeededOrSetTimeout()
 {
   // check if break is already set or a timeout has already been set
   if (this->_isBrakeConfigured && !this->_isBrakeActive && this->_timeToEngangeBrake == LONG_MAX)
@@ -1462,7 +1418,7 @@ void ESP_FlexyStepper::triggerBrakeIfNeededOrSetTimeout()
 // great for the amount of torque that it can generate.
 //  Exit:  velocity speed in steps per second returned, signed
 //
-float ESP_FlexyStepper::getCurrentVelocityInStepsPerSecond()
+float Stepper::getCurrentVelocityInStepsPerSecond()
 {
   if (currentStepPeriod_InUS == 0.0)
     return (0);
@@ -1479,7 +1435,7 @@ float ESP_FlexyStepper::getCurrentVelocityInStepsPerSecond()
 // check if the motor has competed its move to the target position
 //  Exit:  true returned if the stepper is at the target position
 //
-bool ESP_FlexyStepper::motionComplete()
+bool Stepper::motionComplete()
 {
   if ((directionOfMotion == 0) &&
       (currentPosition_InSteps == targetPosition_InSteps))
@@ -1492,7 +1448,7 @@ bool ESP_FlexyStepper::motionComplete()
 // determine the period for the next step, either speed up a little, slow down a
 // little or go the same speed
 //
-void ESP_FlexyStepper::DeterminePeriodOfNextStep()
+void Stepper::DeterminePeriodOfNextStep()
 {
   long distanceToTarget_Signed;
   long distanceToTarget_Unsigned;

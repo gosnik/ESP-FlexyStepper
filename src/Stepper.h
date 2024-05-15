@@ -1,16 +1,16 @@
 
 //      ******************************************************************
 //      *                                                                *
-//      *                    Header file for ESP-FlexyStepper            *
+//      *       Stepper                                                  *
 //      *                                                                *
-//      *            Paul Kerspe                     4.6.2020            *
-//      *       based on the concept of FlexyStepper by Stan Reifel      *
+//      *       Adam Phoenix                                  14.5.2024  *
+//      *       based on the concept of ESP-FlexyStepper by Paul Kerspe  *
 //      *                                                                *
 //      ******************************************************************
 
 // MIT License
 //
-// Copyright (c) 2020 Paul Kerspe
+// Copyright (c) 2024 Adam Phoenix
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -30,19 +30,22 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// This library is based on the works of Stan Reifel in his FlexyStepper library:
-// https://github.com/Stan-Reifel/FlexyStepper
-
-#ifndef ESP_FlexyStepper_h
-#define ESP_FlexyStepper_h
-
-#ifdef ESP32
 //
-// #elif defined(ESP8266)
+// This library is used to control one or more stepper motors.  It requires a
+// stepper driver board that has a Step and Direction interface.  The motors are
+// accelerated and decelerated as they travel to the final position.  This driver
+// supports changing the target position, speed or rate of acceleration while a
+// motion is in progress.
 //
-#else
-#error Platform not supported, only ESP32 modules are currently supported
-#endif
+// for more details and a manual on how to use it, check the README.md on github and 
+// the provided examples.
+//
+// This library is based on the works of Paul Kerspe in his ESP-FlexyStepper library:
+// https://github.com/pkerspe/ESP-FlexyStepper
+//
+
+#ifndef _Stepper_h
+#define _Stepper_h
 
 #include <Arduino.h>
 #include <stdlib.h>
@@ -50,11 +53,11 @@
 typedef void (*callbackFunction)(void);
 typedef void (*positionCallbackFunction)(long);
 
-class ESP_FlexyStepper
+class Stepper
 {
 public:
-  ESP_FlexyStepper();
-  ~ESP_FlexyStepper();
+  Stepper();
+  ~Stepper();
   // service functions
   bool startAsService(int coreNumber = 1);
   void stopService(void);
@@ -62,9 +65,8 @@ public:
 
   // IO setup and helper / debugging functions
   void connectToPins(byte stepPinNumber, byte directionPinNumber = 255, bool useOpenDrain = false);
-  void setBrakePin(signed char brakePin, byte activeState = ESP_FlexyStepper::ACTIVE_HIGH);
-  void setEnablePin(signed char enablePin, byte activeState = ESP_FlexyStepper::ACTIVE_LOW);
-  long getTaskStackHighWaterMark(void);
+  void setBrakePin(signed char brakePin, byte activeState = Stepper::ACTIVE_HIGH);
+  void setEnablePin(signed char enablePin, byte activeState = Stepper::ACTIVE_LOW);
   void clearLimitSwitchActive(void);
   bool motionComplete();
   int getDirectionOfMotion(void);
@@ -77,6 +79,7 @@ public:
   void enableDriver(void);
   void disableDriver(void);
   bool isDriverEnabled(void);
+
   // the central function to calculate the next movment step signal
   bool processMovement(void);
 
@@ -223,9 +226,7 @@ private:
   bool limitSwitchCheckPeformed;
   // 0 if the the stepper is allowed to move in both directions (e.g. no limit or homing switch triggered), otherwise indicated which direction is currently not allowed for further movement
   signed char disallowedDirection;
-
-  TaskHandle_t xHandle = NULL;
 };
 
 // ------------------------------------ End ---------------------------------
-#endif
+#endif // _Stepper_h
